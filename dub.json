@@ -1,0 +1,9 @@
+{
+	"authors": [
+		"Brian"
+	],
+	"copyright": "Copyright © 2023, Brian",
+	"description": "A set that doesn't prevent its contents from being collected by the garbage collector",
+	"license": "BSL-1.0",
+	"name": "weakset"
+}
