@@ -24,13 +24,52 @@ Stores a set of items, while still allowing items to be collected by the GC.
 Once an item is collected by the GC, the set will automatically update its length and the item will be removed from the set.
 
 $(B Usage of the set should be wrapped in calls to $(REF WeakSet.lock) and $(REF WeakSet.unlock)) to ensure that the contents
-of the set don't unexpectedly change while the set is being used.
+of the set don't unexpectedly change while the set is being used. $(I Note that $(D foreach) loops over the set automatically
+lock the set for the duration of the loop.)
 
 Limitations:
 
 * The current implementation assumes $(D opEquals) is not overridden, and the behavior of $(D toHash) is consistent with
 hashing the pointer to the object.
 * $(D null) cannot be added to the set.
+
+Example:
+
+----
+// Creating a weak set:
+WeakSet!Foo set = new WeakSet!Foo();
+
+// Checking set membership:
+bool isInTheSet = foo in set;
+
+// Adding to/removing from the set:
+set.add(foo);
+set.remove(bar);
+
+// Getting the number of items in the set:
+writeln(set.length);
+
+// Looping over the set:
+foreach (item; set) {
+	writeln(item, " is in the set!");
+}
+
+// Complex "transactional" operations:
+{
+	// set.lock() guarantees that the contents of the set will
+	// not change until the set is unlocked; in other words,
+	// the GC will track the contents of the set until the set
+	// is unlocked
+	set.lock();
+	scope (exit) set.unlock();
+
+	size_t len = set.length;
+	doStuff();
+	foreach (item; set) {
+		writeln(item, " is part of a set with length ", len);
+	}
+}
+----
 
 +/
 class WeakSet(T) if (is(T == class)) {
@@ -45,10 +84,23 @@ class WeakSet(T) if (is(T == class)) {
 	}
 
 	/++ Returns the number of items that are currently in the set. +/
-	size_t length() const @property { return m_length; }
+	size_t length() const @property {
+		// this lock is necessary because the GC might be invoked from a separate thread,
+		// in which case the length may unexpectedly change while we're reading it...
+		// or maybe it's not strictly necessary, but better safe than sorry
+		lock();
+		scope (exit) { unlock(); }
+
+		return m_length;
+	}
 
 	/++ Returns the current capacity of the set. Guaranteed to be a positive power of 2, or 0. +/
-	size_t capacity() const @property { return m_capacity; }
+	size_t capacity() const @property {
+		lock(); // see .length comment
+		scope (exit) { unlock(); }
+
+		return m_capacity;
+	}
 
 	private void capacity(size_t value) @property {
 		GC.addRange(data, m_capacity * Bucket.sizeof, typeid(Bucket));
@@ -152,16 +204,25 @@ class WeakSet(T) if (is(T == class)) {
 	}
 
 	void add(T obj) {
+		lock();
+		scope (exit) { unlock(); }
+
 		addImpl(obj, null);
 	}
 
 	bool remove(T obj) {
+		lock();
+		scope (exit) { unlock(); }
+
 		return removeImpl(obj);
 	}
 
 	bool opBinaryRight(string op)(T obj) if (op == "in") {
 		if (obj is null)
 			return false;
+
+		lock();
+		scope (exit) { unlock(); }
 
 		size_t index = probe(obj, false);
 		return !(index == -1 || data[index].obj is null);
@@ -182,6 +243,9 @@ class WeakSet(T) if (is(T == class)) {
 	}
 
 	int opApply(scope int delegate(T) dg) {
+		lock();
+		scope (exit) { unlock(); }
+
 		int result = 0;
 
 		for (size_t i = 0; i < capacity; ++i) {
