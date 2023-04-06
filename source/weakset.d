@@ -88,16 +88,16 @@ class WeakSet(T) if (is(T == class)) {
 		// this lock is necessary because the GC might be invoked from a separate thread,
 		// in which case the length may unexpectedly change while we're reading it...
 		// or maybe it's not strictly necessary, but better safe than sorry
-		lock();
-		scope (exit) { unlock(); }
+		(cast() this).lock();
+		scope (exit) { (cast() this).unlock(); }
 
 		return m_length;
 	}
 
 	/++ Returns the current capacity of the set. Guaranteed to be a positive power of 2, or 0. +/
 	size_t capacity() const @property {
-		lock(); // see .length comment
-		scope (exit) { unlock(); }
+		(cast() this).lock(); // see .length comment
+		scope (exit) { (cast() this).unlock(); }
 
 		return m_capacity;
 	}
